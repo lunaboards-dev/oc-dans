@@ -16,7 +16,7 @@ local services
 local fields = {"row", "version", "command", "offset", "special_lines", "query"}
 
 local function gen_packet(info, offset, mtu)
-	local pkt = string.format("dans\t1.0\tres\t%d\t0\t", offset)
+	local pkt = string.format("dans\t1.0\tres\t%d\t0\t%s", offset, os.getenv("HOSTNAME") or require("computer").address():sub(1, 8))
 	for i=offset or 1, #info do
 		local s = info[i]
 		local line = string.format("\n%s\t%d\t%s\t%s", s.proto, s.port, s.type, s.title)

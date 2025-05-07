@@ -48,7 +48,7 @@ function dans.query(query, offset, port)
         if dat then
             deadline = computer.uptime() + (dans.deadline or 1.5)
             local firstline = dat:match("[^\n]+")
-            local magic, ver, _offset, skip = tsv_unpack(firstline)
+            local magic, ver, _offset, skip, hostname = tsv_unpack(firstline)
             if magic ~= "dans" or ver ~= "1.0" then
                 return
             end
@@ -64,7 +64,8 @@ function dans.query(query, offset, port)
                         type = type,
                         title = title,
                         host = host,
-                        card = card
+                        card = card,
+                        hostname = hostname
                     })
                 end
             end
