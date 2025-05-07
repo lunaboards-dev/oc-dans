@@ -11,13 +11,21 @@ local cfg = {
 	enable_network = true
 }
 
+local function tsv_unpack(line)
+    local tsv = {}
+    for col in line:gmatch("[^\t]*") do
+        table.insert(tsv, col)
+    end
+    return table.unpack(tsv)
+end
+
 local services
 
 local fields = {"row", "version", "command", "offset", "special_lines", "query"}
 
 local function gen_packet(info, offset, mtu)
 	local pkt = string.format("dans\t1.0\tres\t%d\t0\t%s", offset, os.getenv("HOSTNAME") or require("computer").address():sub(1, 8))
-	for i=offset or 1, #info do
+	for i=math.max(offset, 1) or 1, #info do
 		local s = info[i]
 		local line = string.format("\n%s\t%d\t%s\t%s", s.proto, s.port, s.type, s.title)
 		if #pkt + #line > mtu then
@@ -43,11 +51,13 @@ local function search(query)
 		type = query.type,
 		title = query.title
 	}
+	event.push("dans_query", q.proto, q.port, q.type, q.title)
 	local res = {}
 	for i=1, #services do
 		local s = services[i]
 		if check(s, q, "proto") and check(s, q, "port")
 			and check(s, q, "type") and check(s, q, "title") then
+			event.push("dans_hit", s.proto, s.port, s.type, s.title)
 			table.insert(res, s)
 		end
 	end
@@ -74,20 +84,24 @@ local function rm_service(_, proto, port, type, title)
 end
 
 local function query(msg, mtu)
-	local line = msg:match("^[\n]*")
-	local parsed = {}
-	if parsed.command ~= "res" then return end
-	for col in line:gmatch("[^\t]*") do
+	local line = msg:match("[^\n]*")
+	--local parsed = {}
+	local magic, ver, command, offset, special, _query = tsv_unpack(line)
+	if magic ~= "dans" or ver ~= "1.0" or command ~= "query" then
+		return "dans\t1.0\terror\t0\t0\tbad query"
+	end
+	--if parsed.command ~= "query" then return end
+	--[=[for col in line:gmatch("[^\t]*") do
 		table.insert(parsed, col)
 		parsed[fields[#parsed]] = col
-	end
+	end]=]
 	local que = {}
-	for pair in parsed.query:gmatch("[^;]+") do
+	for pair in _query:gmatch("[^;]+") do
 		local k, v = pair:match("([^=]+)=(.+)")
 		que[k] = v
 	end
 	local info = search(que)
-	return gen_packet(info, tonumber(parsed.offset), mtu)
+	return gen_packet(info, tonumber(offset), mtu)
 end
 
 local function modem_message(_, dev, sender, port, _, msg)
@@ -101,7 +115,7 @@ end
 
 local function net_message(_, sender, port, data)
 	if port == cfg.port then
-		local pkt = query(data, mt.mtu-44-#sender)
+		local pkt = query(data, 4096)
 		if not pkt then return end
 		mt.send(sender, port, pkt)
 	end
@@ -116,7 +130,8 @@ function start()
 		event.listen("modem_message", modem_message)
 	end
 	if cfg.enable_minitel and has_mt then
-		event.listen("netmsg", net_message)
+		event.listen("net_msg", net_message)
+		event.listen("net_broadcast", net_message)
 	end
 	event.listen("dans_add_service", add_service)
 	event.listen("dans_rm_service", rm_service)
@@ -135,4 +150,11 @@ end
 function restart()
 	stop()
 	start()
+end
+
+function list()
+	for i=1, #services do
+		local s = services[i]
+		print(s.proto, s.port, s.type, s.title)
+	end
 end

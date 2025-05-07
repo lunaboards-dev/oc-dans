@@ -22,15 +22,16 @@ function dans.query(query, offset, port)
         table.insert(q, tostring(k).."="..tostring(v))
     end
     local que = table.concat(q, ";")
-    local dans_pkt = string.format("dans\t1.0\t%d\t0\t%s", offset, que)
+    local dans_pkt = string.format("dans\t1.0\tquery\t%d\t0\t%s", offset, que)
     if has_mt then
-        minitel.send("~", 137, dans_pkt)
+        minitel.usend("~", 137, dans_pkt)
     end
     for dev in component.list("modem") do
         component.invoke(dev, "broadcast", port, dans_pkt)
     end
     local deadline = computer.uptime()+(dans.deadline or 1.5)
     local results = {}
+    local hostnames = {}
     while computer.uptime() < deadline do
         local sig = table.pack(computer.pullSignal(deadline-computer.uptime()))
         local dat, host, card
@@ -48,8 +49,8 @@ function dans.query(query, offset, port)
         if dat then
             deadline = computer.uptime() + (dans.deadline or 1.5)
             local firstline = dat:match("[^\n]+")
-            local magic, ver, _offset, skip, hostname = tsv_unpack(firstline)
-            if magic ~= "dans" or ver ~= "1.0" then
+            local magic, ver, cmd, _offset, skip, hostname = tsv_unpack(firstline)
+            if magic ~= "dans" or ver ~= "1.0" or cmd ~= "res" then
                 return
             end
             skip = skip + 1
@@ -67,11 +68,18 @@ function dans.query(query, offset, port)
                         card = card,
                         hostname = hostname
                     })
+                    hostnames[hostname] = hostnames[hostname] or {}
+                    local hn = hostnames[hostname]
+                    if card then
+                        hn.address = host
+                    else
+                        hn.mtaddr = host
+                    end
                 end
             end
         end
     end
-    return results
+    return results, hostnames
 end
 
 return dans
